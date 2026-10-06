@@ -296,8 +296,13 @@ func (r *recorder) AnnotatedEventf(
 
 	// Add object annotations to the annotations.
 	annotations := maps.Clone(inputAnnotations)
+	var metadataExpr string
 	if annotatedObject, ok := object.(interface{ GetAnnotations() map[string]string }); ok {
 		for k, v := range annotatedObject.GetAnnotations() {
+			if k == eventMetadataAnnotation {
+				metadataExpr = v
+				continue
+			}
 			if strings.HasPrefix(k, eventv1.Group+"/") {
 				if annotations == nil {
 					annotations = make(map[string]string)
@@ -309,6 +314,19 @@ func (r *recorder) AnnotatedEventf(
 
 	// Add object info in the logger.
 	log := r.log.WithValues("name", ref.Name, "namespace", ref.Namespace, "reconciler kind", ref.Kind)
+
+	if metadataExpr != "" {
+		if computed := computeEventMetadata(object, metadataExpr, log); len(computed) > 0 {
+			if annotations == nil {
+				annotations = make(map[string]string, len(computed))
+			}
+			for k, v := range computed {
+				if _, ok := annotations[k]; !ok {
+					annotations[k] = v
+				}
+			}
+		}
+	}
 
 	// Log the event if in trace mode.
 	if log.GetSink().Enabled(logger.TraceLevel) {

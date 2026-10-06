@@ -475,6 +475,87 @@ func TestExpression_EvaluateStringSlice(t *testing.T) {
 	}
 }
 
+func TestExpression_EvaluateStringMap(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		expr   string
+		opts   []cel.Option
+		data   map[string]any
+		result map[string]string
+		err    string
+	}{
+		{
+			name:   "string map literal",
+			expr:   `{"a": "1", "b": "2"}`,
+			data:   map[string]any{},
+			result: map[string]string{"a": "1", "b": "2"},
+		},
+		{
+			name:   "compiled expression returning a map from struct fields",
+			expr:   `{"name": obj.metadata.name, "env": obj.metadata.labels["env"]}`,
+			opts:   []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data:   map[string]any{"obj": map[string]any{"metadata": map[string]any{"name": "webapp", "labels": map[string]any{"env": "production"}}}},
+			result: map[string]string{"name": "webapp", "env": "production"},
+		},
+		{
+			name:   "selected map with dyn string values",
+			expr:   `obj.metadata.labels`,
+			opts:   []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data:   map[string]any{"obj": map[string]any{"metadata": map[string]any{"labels": map[string]any{"env": "production"}}}},
+			result: map[string]string{"env": "production"},
+		},
+		{
+			name: "compiled expression returning a map with string manipulation",
+			expr: `{"env": obj.metadata.labels["env"].upperAscii()}`,
+			opts: []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data: map[string]any{
+				"obj": map[string]any{"metadata": map[string]any{"labels": map[string]any{"env": "production"}}},
+			},
+			result: map[string]string{"env": "PRODUCTION"},
+		},
+		{
+			name: "non-map result",
+			expr: `obj.metadata.name`,
+			opts: []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data: map[string]any{"obj": map[string]any{"metadata": map[string]any{"name": "webapp"}}},
+			err:  "failed to evaluate CEL expression 'obj.metadata.name' as map[string]string: unsupported native conversion from string to 'map[string]string'",
+		},
+		{
+			name: "map with non-string value",
+			expr: `{"generation": obj.metadata.generation}`,
+			opts: []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data: map[string]any{"obj": map[string]any{"metadata": map[string]any{"generation": int64(2)}}},
+			err:  `failed to evaluate CEL expression '{"generation": obj.metadata.generation}' as map[string]string: unsupported type conversion from 'int' to string`,
+		},
+		{
+			name: "evaluation failure",
+			expr: `obj.metadata.labels["env"]`,
+			opts: []cel.Option{cel.WithCompile(), cel.WithStructVariables("obj")},
+			data: map[string]any{"obj": map[string]any{"metadata": map[string]any{}}},
+			err:  `failed to evaluate the CEL expression 'obj.metadata.labels["env"]': no such key: labels`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			g := NewWithT(t)
+
+			e, err := cel.NewExpression(tt.expr, tt.opts...)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			result, err := e.EvaluateStringMap(context.Background(), tt.data)
+
+			if tt.err != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.err))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result).To(Equal(tt.result))
+			}
+		})
+	}
+}
+
 func TestExpression_Evaluate(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

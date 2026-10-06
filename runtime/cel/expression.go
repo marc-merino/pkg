@@ -173,6 +173,23 @@ func (e *Expression) EvaluateStringSlice(ctx context.Context, data map[string]an
 	return result, nil
 }
 
+// EvaluateStringMap evaluates the expression with the given data and returns the result as map[string]string.
+func (e *Expression) EvaluateStringMap(ctx context.Context, data map[string]any) (map[string]string, error) {
+	val, _, err := e.prog.ContextEval(ctx, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate the CEL expression '%s': %w", e.expr, err)
+	}
+	v, err := val.ConvertToNative(reflect.TypeOf(map[string]string{}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate CEL expression '%s' as map[string]string: %w", e.expr, err)
+	}
+	result, ok := v.(map[string]string)
+	if !ok {
+		return nil, fmt.Errorf("failed to type-assert CEL expression result as map[string]string: '%s'", e.expr)
+	}
+	return result, nil
+}
+
 // Evaluate evaluates the expression with the given data and returns the result as any.
 func (e *Expression) Evaluate(ctx context.Context, data map[string]any) (any, error) {
 	result, _, err := e.prog.ContextEval(ctx, data)
